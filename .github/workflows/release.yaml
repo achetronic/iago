@@ -31,16 +31,11 @@ jobs:
             suffix: linux-amd64
           - os: ubuntu-24.04-arm
             suffix: linux-arm64
-          # `macos-latest` is a moving target: GitHub migrates it to newer
-          # images, and while a new image is rolling out the job can sit
-          # unclaimed ("The job was not acquired by Runner of type hosted").
-          # Pin the Apple-silicon image.
-          - os: macos-14
-            suffix: macos-arm64
-          # The same runner builds the Intel binaries: the macOS SDK is universal
-          # and Rust cross-compiles, so the Intel image is not worth waiting for.
-          - os: macos-14
-            suffix: macos-amd64
+          # One Apple-silicon job builds both Mac binaries: arm64 natively and
+          # Intel by cross-compiling (the macOS SDK is universal). One job means
+          # one scarce arm64 runner instead of two racing for the same pool.
+          - os: macos-latest
+            suffix: macos
             target: x86_64-apple-darwin
     steps:
       - name: Checkout
@@ -71,7 +66,13 @@ jobs:
           key: ${{ matrix.suffix }}
 
       - name: Build the tarball
-        run: make dist SUFFIX=${{ matrix.suffix }} TARGET=${{ matrix.target }}
+        run: |
+          if [ "${{ matrix.suffix }}" = "macos" ]; then
+            make dist SUFFIX=macos-arm64
+            make dist SUFFIX=macos-amd64 TARGET=${{ matrix.target }}
+          else
+            make dist SUFFIX=${{ matrix.suffix }} TARGET=${{ matrix.target }}
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
