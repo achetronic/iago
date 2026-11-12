@@ -31,11 +31,15 @@ jobs:
             suffix: linux-amd64
           - os: ubuntu-24.04-arm
             suffix: linux-arm64
-          - os: macos-latest
+          # `macos-latest` is a moving target: GitHub migrates it to newer
+          # images, and while a new image is rolling out the job can sit
+          # unclaimed ("The job was not acquired by Runner of type hosted").
+          # Pin the Apple-silicon image.
+          - os: macos-14
             suffix: macos-arm64
           # The same runner builds the Intel binaries: the macOS SDK is universal
           # and Rust cross-compiles, so the Intel image is not worth waiting for.
-          - os: macos-latest
+          - os: macos-14
             suffix: macos-amd64
             target: x86_64-apple-darwin
     steps:

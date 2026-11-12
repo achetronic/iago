@@ -280,7 +280,7 @@ impl Default for AsrSettings {
             models_dir: String::new(),
             precision: Precision::Int8,
             language: String::new(),
-            idle_timeout_secs: 600,
+            idle_timeout_secs: 0,
             request_timeout_secs: 180,
         }
     }

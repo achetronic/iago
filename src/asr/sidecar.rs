@@ -13,6 +13,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::config::Settings;
@@ -111,9 +112,16 @@ impl Sidecar {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
-        let child = command.spawn().map_err(|err| {
+        let mut child = command.spawn().map_err(|err| {
             Error::Transcription(format!("cannot start {}: {err}", spec.binary.display()))
         })?;
+
+        // Drain stderr into the rolling log. Without a reader the pipe fills and
+        // a chatty server blocks on write, which looks like it died for no reason;
+        // and `last_log_lines` has something to say when the start fails.
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(read_stderr(stderr, Arc::clone(&log)));
+        }
 
         tracing::info!(
             binary = %spec.binary.display(),
@@ -201,6 +209,25 @@ impl Sidecar {
 impl Drop for Sidecar {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+    }
+}
+
+/// Most lines kept from the server's stderr; enough to explain a failed start.
+const MAX_LOG_LINES: usize = 200;
+
+/// Appends stderr lines to the rolling log, newest last.
+async fn read_stderr(
+    stderr: tokio::process::ChildStderr,
+    log: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+) {
+    let mut lines = BufReader::new(stderr).lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let mut log = log.lock().expect("stderr log lock poisoned");
+        log.push_back(line);
+        while log.len() > MAX_LOG_LINES {
+            log.pop_front();
+        }
     }
 }
 
