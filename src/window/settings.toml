@@ -1,0 +1,164 @@
+# Settings descriptor.
+#
+# Every option the control center shows lives here: the order of the sections,
+# the label, the control, the help, and when the option applies. The Rust types
+# in `iago::config` stay the source of truth for values and defaults; this file
+# decides how they are presented. `cargo test` fails if the two drift:
+# a key that does not exist, a control that does not match the field type, a
+# choice whose options cannot be deserialised, or a setting with no entry here.
+#
+# control: text | number | switch | choice | slider | keys | language
+# hidden:  true when the setting exists but must not be edited here.
+
+[[section]]
+title = "General"
+
+[[section.field]]
+key = "general.autostart"
+label = "Start at login"
+control = "switch"
+help = "runs the dictation service when you log in"
+
+[[section.field]]
+key = "general.notifications"
+label = "Desktop notifications"
+control = "switch"
+help = "tells you when a dictation fails"
+
+[[section]]
+title = "Appearance"
+
+[[section.field]]
+key = "theme.name"
+label = "Theme"
+control = "choice"
+options = ["auto", "mint", "mint-dark"]
+labels = ["Follow the system", "Light", "Dark"]
+
+[[section]]
+title = "Shortcut"
+
+[[section.field]]
+key = "hotkey.binding"
+label = "Binding"
+control = "keys"
+help = "click and press the combination"
+
+[[section.field]]
+key = "hotkey.mode"
+label = "Behaviour"
+control = "choice"
+options = ["toggle", "push-to-talk"]
+labels = ["Press to start and stop", "Press and talk"]
+requires = ["", "hold-to-talk"]
+
+[[section.field]]
+key = "hotkey.max_duration_secs"
+label = "Longest recording"
+control = "slider"
+unit = "s"
+min = 5
+max = 600
+step = 5
+
+[[section]]
+title = "Delivery"
+
+[[section.field]]
+key = "delivery.target"
+label = "Where the text goes"
+control = "choice"
+options = ["clipboard", "focus"]
+labels = ["Clipboard", "Keyboard focus"]
+
+[[section.field]]
+key = "delivery.after"
+label = "After each dictation"
+control = "choice"
+options = ["nothing", "space", "newline"]
+labels = ["Nothing", "A space", "A new line"]
+
+[[section]]
+title = "Audio"
+
+[[section.field]]
+key = "audio.device"
+label = "Microphone"
+control = "microphone"
+
+[[section.field]]
+key = "audio.backend"
+label = "Backend"
+control = "choice"
+options = ["auto", "pipewire", "mock"]
+labels = ["Auto", "PipeWire", "Mock"]
+hidden = true
+
+[[section]]
+title = "Recognition"
+
+[[section.field]]
+key = "asr.mode"
+label = "Transcription"
+control = "choice"
+options = ["sidecar", "remote"]
+labels = ["This computer", "Remote server"]
+
+[[section.field]]
+key = "asr.endpoint"
+label = "Endpoint"
+control = "text"
+visible_when = "asr.mode == remote"
+
+[[section.field]]
+key = "asr.precision"
+label = "Model"
+control = "choice"
+options = ["int8", "fp32"]
+labels = ["Lightweight · 700 MB", "Precise · 2.4 GB"]
+
+[[section.field]]
+key = "asr.language"
+label = "Language"
+control = "language"
+
+[[section.field]]
+key = "asr.api_key"
+label = "API key"
+control = "text"
+visible_when = "asr.mode == remote"
+
+[[section.field]]
+key = "asr.headers"
+label = "Extra headers"
+control = "paragraph"
+help = "one Name: value per line"
+visible_when = "asr.mode == remote"
+
+[[section.field]]
+key = "asr.models_dir"
+label = "Models directory"
+control = "text"
+hidden = true
+
+[[section]]
+title = "Advanced"
+
+[[section.field]]
+key = "asr.idle_timeout_secs"
+label = "Stop the engine after"
+control = "slider"
+unit = "s"
+min = 0
+max = 3600
+step = 30
+help = "0 keeps it running; it comes back on the next dictation"
+
+[[section.field]]
+key = "asr.request_timeout_secs"
+label = "Give up after"
+control = "slider"
+unit = "s"
+min = 10
+max = 600
+step = 5

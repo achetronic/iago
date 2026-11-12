@@ -1,0 +1,87 @@
+[package]
+name = "iago"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+authors = ["Alby Hernández <hola@achetronic.com>"]
+repository = "https://github.com/achetronic/iago"
+description = "Private, local dictation for modern Linux desktops, powered by Parakeet"
+keywords = ["dictation", "wayland", "speech-to-text", "asr"]
+categories = ["command-line-utilities", "multimedia::audio"]
+
+[[bin]]
+name = "iago"
+path = "src/main.rs"
+
+[lib]
+name = "iago"
+path = "src/lib.rs"
+
+[features]
+default = ["portal", "inject", "clipboard"]
+# XDG GlobalShortcuts portal: push-to-talk without reading /dev/input.
+portal = ["dep:ashpd"]
+# Text delivery into the focused window through the RemoteDesktop portal.
+inject = ["dep:ashpd"]
+# Clipboard delivery through the Wayland data-control protocol.
+clipboard = ["dep:arboard"]
+
+[dependencies]
+anyhow = "1.0"
+async-io = "2"
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive"] }
+dirs = "7.0"
+flate2 = "1.0"
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "multipart",
+    "rustls-tls",
+    "stream",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tar = "0.4"
+thiserror = "2.0"
+tokio = { version = "1.40", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "time",
+    "sync",
+    "net",
+    "io-util",
+    "signal",
+] }
+toml = "1.0"
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4"] }
+
+# Optional backends. `default-features = false` everywhere: no X11 and no
+# GTK/Qt anywhere in the tree.
+arboard = { version = "3.6", optional = true, default-features = false, features = [
+    "wayland-data-control",
+] }
+ashpd = { version = "0.14", optional = true, default-features = false, features = [
+    "async-io",
+    "global_shortcuts",
+    "remote_desktop",
+    "screencast",
+] }
+# The control center. Pulls zbus through ashpd 0.13 with the async-io backend,
+# which matches its smol executor; our own ashpd below is 0.14 with tokio. Two
+# different zbus majors, two processes, no shared state.
+gpui-kit = "0.9.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+opt-level = 3

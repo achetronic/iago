@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Iago
+GenericName=Dictation
+Comment=Private, local dictation powered by Parakeet
+Exec=iago
+Icon=com.achetronic.Iago
+Terminal=false
+Categories=Utility;
+Keywords=dictation;speech;transcription;
+StartupNotify=true

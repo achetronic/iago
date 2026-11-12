@@ -1,0 +1,10 @@
+# Build output
+/target
+dist/
+
+# Local artifacts
+*.log
+.env
+
+# The models and the Parakeet binary are downloaded, never committed
+/models

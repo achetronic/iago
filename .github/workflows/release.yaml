@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Target version ref for the tag and the release (e.g. v1.2.3)'
+        type: string
+        required: true
+      use_master:
+        description: 'Build from master instead of the version ref'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux-amd64
+          - os: ubuntu-24.04-arm
+            suffix: linux-arm64
+          - os: macos-latest
+            suffix: macos-arm64
+          # The same runner builds the Intel binaries: the macOS SDK is universal
+          # and Rust cross-compiles, so the Intel image is not worth waiting for.
+          - os: macos-latest
+            suffix: macos-amd64
+            target: x86_64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ (github.event.inputs.use_master == 'true') && 'master' || (github.event.inputs.ref || github.ref) }}
+          fetch-depth: 0
+
+      - name: Install the window's build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev libwayland-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libvulkan-dev libfontconfig-dev libfreetype-dev \
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.suffix }}
+
+      - name: Build the tarball
+        run: make dist SUFFIX=${{ matrix.suffix }} TARGET=${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iago-${{ matrix.suffix }}
+          path: dist/*
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ (github.event.inputs.use_master == 'true') && 'master' || (github.event.inputs.ref || github.ref) }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: artifacts
+        run: |
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/checksums.txt
+          generate_release_notes: true
+          draft: false
+          tag_name: ${{ github.event.inputs.ref || github.ref_name }}
+          prerelease: ${{ contains(github.event.inputs.ref || github.ref, '-rc') || contains(github.event.inputs.ref || github.ref, '-beta') || contains(github.event.inputs.ref || github.ref, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
