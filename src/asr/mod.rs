@@ -98,6 +98,16 @@ impl Engine {
             Self::Parakeet(engine) => engine.shutdown().await,
         }
     }
+
+    /// Exit status of the sidecar when it died on its own.
+    ///
+    /// `None` means it is either alive or was stopped on purpose; the watcher
+    /// tells those apart by looking only at processes nobody killed.
+    pub async fn sidecar_exit(&self) -> Option<std::process::ExitStatus> {
+        match self {
+            Self::Parakeet(engine) => engine.sidecar_exit().await,
+        }
+    }
 }
 
 /// State of the recognition backend, as shown to the user.
@@ -180,6 +190,20 @@ impl ParakeetEngine {
         if let Some(mut booted) = guard.take() {
             if let Some(sidecar) = booted.sidecar.as_mut() {
                 sidecar.stop().await;
+            }
+        }
+    }
+
+    /// Exit status of the owned sidecar, when it ended by itself.
+    async fn sidecar_exit(&self) -> Option<std::process::ExitStatus> {
+        let mut guard = self.state.lock().await;
+        let booted = guard.as_mut()?;
+        let sidecar = booted.sidecar.as_mut()?;
+        match sidecar.exit_status() {
+            Ok(status) => status,
+            Err(err) => {
+                tracing::warn!(error = %err, "cannot read the parakeet exit status");
+                None
             }
         }
     }

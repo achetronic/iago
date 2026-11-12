@@ -204,6 +204,14 @@ impl Sidecar {
         let _ = self.child.start_kill();
         let _ = tokio::time::timeout(Duration::from_secs(5), self.child.wait()).await;
     }
+
+    /// Exit status when the process ended on its own, `None` while it lives.
+    ///
+    /// Used by the watcher: a server that died is replaced, a server that was
+    /// stopped on purpose is not.
+    pub fn exit_status(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        self.child.try_wait()
+    }
 }
 
 impl Drop for Sidecar {
@@ -270,5 +278,39 @@ mod tests {
         let paths = Paths::with_root("/tmp/iago-sidecar-test");
         let error = SidecarSpec::from_settings(&settings, &paths).expect_err("must fail");
         assert!(error.to_string().contains("parakeet binary is missing"));
+    }
+
+    /// The watcher only restarts what it can see is gone, so a process that
+    /// ended has to report its status.
+    #[test]
+    fn a_dead_process_reports_the_status_it_exited_with() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            let spec = SidecarSpec {
+                binary: PathBuf::from("/bin/true"),
+                models_dir: PathBuf::from("/tmp/models"),
+                precision: "int8".to_string(),
+                base_url: "http://127.0.0.1:1".to_string(),
+                api_key: "token".to_string(),
+            };
+            let mut sidecar = Sidecar::spawn(spec).await.expect("spawn");
+            let deadline = Instant::now() + Duration::from_secs(5);
+
+            loop {
+                if let Some(status) = sidecar.exit_status().expect("cannot read the status") {
+                    assert!(status.success());
+                    return;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "the process never reported an exit"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
     }
 }

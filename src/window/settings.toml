@@ -145,16 +145,6 @@ hidden = true
 title = "Advanced"
 
 [[section.field]]
-key = "asr.idle_timeout_secs"
-label = "Stop the engine after"
-control = "slider"
-unit = "s"
-min = 0
-max = 3600
-step = 30
-help = "0 keeps it running; it comes back on the next dictation"
-
-[[section.field]]
 key = "asr.request_timeout_secs"
 label = "Give up after"
 control = "slider"

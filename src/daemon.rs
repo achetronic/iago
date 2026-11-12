@@ -39,6 +39,9 @@ const SILENCE_THRESHOLD: f32 = 0.0015;
 /// Longest socket path we accept, a `sun_path` limit with room to spare.
 const MAX_SOCKET_PATH: usize = 100;
 
+/// How often the watcher looks at the model process.
+const ENGINE_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Mutable runtime state, guarded by a plain mutex because every critical
 /// section is short and never crosses an await point.
 struct Runtime {
@@ -78,8 +81,6 @@ pub struct Daemon {
     runtime: Mutex<Runtime>,
     stopping: AtomicBool,
     last_toggle: Mutex<Option<Instant>>,
-    /// Counts what the user did, so an idle engine can be recognised.
-    activity: std::sync::atomic::AtomicU64,
     hotkey_runner: Mutex<Option<Box<dyn crate::input::hotkey::HotkeyRunner>>>,
     /// Combination and mode the running mechanism was built for.
     hotkey_active: Mutex<Option<(String, HotkeyMode)>>,
@@ -95,7 +96,6 @@ impl Daemon {
             engine,
             runtime: Mutex::new(Runtime::default()),
             stopping: AtomicBool::new(false),
-            activity: std::sync::atomic::AtomicU64::new(0),
             last_toggle: Mutex::new(None),
             hotkey_runner: Mutex::new(None),
             hotkey_active: Mutex::new(None),
@@ -311,7 +311,6 @@ impl Daemon {
             chars = transcript.text.chars().count(),
             "transcribed"
         );
-        self.schedule_reaper();
 
         if transcript.is_empty() {
             self.finish_with(None, Some("the model returned no text".to_string()));
@@ -389,43 +388,54 @@ impl Daemon {
         }
     }
 
-    /// Stops the model process after the configured time without doing anything.
+    /// Keeps the model process alive for as long as the daemon runs.
     ///
-    /// The engine is a process with a few hundred megabytes of models in it, and
-    /// leaving it up forever for a dictation every other day is a waste. Zero
-    /// means never.
-    fn schedule_reaper(self: &Arc<Self>) {
-        let idle = self.settings.snapshot().asr.idle_timeout_secs;
-        if idle == 0 {
-            return;
-        }
-
-        // Every transcription bumps the counter, so a stale timer sees a different
-        // number and leaves the engine alone.
-        let generation = self.activity.fetch_add(1, Ordering::SeqCst) + 1;
-        let this = Arc::clone(self);
+    /// The server is a child process holding the models; an out of memory kill,
+    /// a panic in the server or a stray `pkill` takes it down, and without a
+    /// watcher the app looks dead until the next dictation. Only an exit nobody
+    /// asked for is replaced: a process stopped on purpose has no exit status.
+    fn spawn_engine_watch(self: &Arc<Self>) {
+        let daemon = Arc::clone(self);
 
         tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(idle)).await;
+            let mut failures: u32 = 0;
 
-            if this.activity.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            if this.is_recording() {
-                return;
-            }
+            loop {
+                tokio::time::sleep(ENGINE_WATCH_INTERVAL).await;
 
-            let running = {
-                let runtime = this.runtime.lock().expect("runtime lock poisoned");
-                runtime.engine.running()
-            };
-            if !running {
-                return;
-            }
+                if daemon.stopping.load(Ordering::SeqCst) {
+                    return;
+                }
+                // A restart mid-recording would take the microphone away.
+                if daemon.is_recording() {
+                    continue;
+                }
 
-            tracing::info!(idle_secs = idle, "the engine has been idle, stopping it");
-            this.engine.shutdown().await;
-            this.set_engine("stopped", None);
+                let Some(status) = daemon.engine.sidecar_exit().await else {
+                    continue;
+                };
+
+                tracing::warn!(%status, "parakeet exited on its own, restarting it");
+                daemon.engine.shutdown().await;
+                daemon.set_engine("stopped", Some(format!("parakeet exited ({status})")));
+
+                match daemon.start_engine().await {
+                    Ok(()) => {
+                        failures = 0;
+                        tracing::info!("parakeet is back");
+                    }
+                    Err(err) => {
+                        // A server that dies on every start must not be restarted in
+                        // a tight loop: back off, doubling up to a minute.
+                        failures = failures.saturating_add(1);
+                        let wait = std::time::Duration::from_secs(
+                            u64::from(2u32.saturating_pow(failures.min(6))).min(60),
+                        );
+                        tracing::warn!(error = %err, seconds = wait.as_secs(), "cannot restart parakeet");
+                        tokio::time::sleep(wait).await;
+                    }
+                }
+            }
         });
     }
 
@@ -445,17 +455,6 @@ impl Daemon {
         }
 
         self.sync_autostart();
-
-        // A new idle time applies to the engine that is already running.
-        {
-            let running = {
-                let runtime = self.runtime.lock().expect("runtime lock poisoned");
-                runtime.engine.running()
-            };
-            if running {
-                self.schedule_reaper();
-            }
-        }
 
         // The combination belongs to the settings, so a change has to reach the
         // mechanism: release what it had and install the new one. Comparing
@@ -491,8 +490,6 @@ impl Daemon {
             runtime.engine.running()
         };
         if already {
-            // The guard is gone before this: the reaper takes the same lock.
-            self.schedule_reaper();
             return Ok(());
         }
 
@@ -501,8 +498,6 @@ impl Daemon {
         match self.engine.start().await {
             Ok(address) => {
                 self.set_engine("running", Some(address));
-                // Started by hand: the idle timer applies to it too.
-                self.schedule_reaper();
                 Ok(())
             }
             Err(err) => {
@@ -588,6 +583,7 @@ impl Daemon {
         self.register_input_app().await;
         self.spawn_hotkeys();
         self.warm_engine();
+        self.spawn_engine_watch();
         self.warm_delivery();
 
         let shutdown = Arc::new(Notify::new());

@@ -86,8 +86,9 @@ pub trait Transcriber: Send + Sync {
 
 `asr::parakeet` is the HTTP client (OpenAI-compatible multipart). `asr::sidecar`
 owns the process: free loopback port, random API key, `/health` polling, kill on
-drop. `asr::Engine` boots the sidecar on the first transcription, caches the client
-and stops the process after the configured idle time.
+drop. `asr::Engine` boots the sidecar on the first transcription, caches the
+client, and keeps the process alive: a watcher restarts it when it dies on its
+own. There is no idle shutdown; a stopped server is a bug, not a saving.
 
 Speaker diarization exists on the server (`diarize=true`, up to 8 speakers) and is
 deliberately unused: it belongs to conversation history, not to dictation.

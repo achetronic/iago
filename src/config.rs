@@ -219,7 +219,7 @@ impl Default for AudioSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AsrMode {
-    /// Iago owns the process: spawn, health check, idle shutdown.
+    /// Iago owns the process: spawn, health check, keep it alive.
     Sidecar,
     /// Talk to a Parakeet instance we did not start (homelab, remote box).
     Remote,
@@ -264,8 +264,6 @@ pub struct AsrSettings {
     pub precision: Precision,
     /// ISO-639-1 hint. Empty lets the model decide.
     pub language: String,
-    /// Stop the sidecar after this much idle time. `0` keeps it alive.
-    pub idle_timeout_secs: u64,
     /// HTTP timeout for one transcription, in seconds.
     pub request_timeout_secs: u64,
 }
@@ -280,7 +278,6 @@ impl Default for AsrSettings {
             models_dir: String::new(),
             precision: Precision::Int8,
             language: String::new(),
-            idle_timeout_secs: 0,
             request_timeout_secs: 180,
         }
     }
@@ -498,10 +495,11 @@ mod tests {
     fn a_removed_setting_from_an_older_version_is_dropped() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("config.toml");
-        // `keep_last_transcript` and `restore_clipboard` no longer exist.
+        // `keep_last_transcript`, `restore_clipboard` and `idle_timeout_secs`
+        // no longer exist.
         std::fs::write(
             &path,
-            "[general]\nkeep_last_transcript = false\n\n[delivery]\nrestore_clipboard = true\ntarget = \"clipboard-and-type\"\n",
+            "[general]\nkeep_last_transcript = false\n\n[delivery]\nrestore_clipboard = true\ntarget = \"clipboard-and-type\"\n\n[asr]\nidle_timeout_secs = 600\n",
         )
         .expect("write");
 

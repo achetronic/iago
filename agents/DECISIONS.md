@@ -186,3 +186,22 @@ again, which is how a handful of test runs became a wall of permission windows.
 The input connection is opened once at daemon start and reused. A wedged press
 replaces the worker, but there is no watcher reconnecting on its own: the only
 reason to reconnect is a press that already failed.
+
+## The model server stays up, and comes back if it dies
+
+There used to be an `asr.idle_timeout_secs` setting that stopped the sidecar
+after ten minutes without dictating, to give back the memory. It read as a crash:
+the server disappeared on its own, and the reason lived in a log nobody opens.
+
+Memory is not worth that. The default is gone, the setting is gone, and a config
+file that still carries `idle_timeout_secs` loads with the key dropped (the
+settings parser prunes keys this version no longer knows).
+
+What replaces it is a watcher: the daemon looks at the sidecar every five
+seconds and restarts it when it exited on its own. Only processes nobody killed
+are replaced, which is why `Sidecar::exit_status` reports a status and
+`shutdown` does not: stopping the server on purpose is a decision, not a death.
+Restarts back off, doubling up to a minute, so a server that cannot start does
+not spin.
+
+The watcher never restarts mid-recording.
