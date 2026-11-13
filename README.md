@@ -69,15 +69,56 @@ cd iago-0.1.0-linux-amd64
 Start it:
 
 ```sh
-./iago daemon run &
 ./iago
 ```
 
-The window opens. Before the first dictation, go to **Dependencies** and download
-the models; then the shortcut works from anywhere.
+The window opens and starts the daemon next to it, so the shortcut and the
+paste are ready. Before the first dictation, go to **Dependencies** and download
+the models.
 
 To have it start with your session, add `iago daemon run` to your desktop's
-startup applications.
+startup applications, or turn on autostart in **Settings**.
+
+### Desktop entry
+
+A `.desktop` file is what puts Iago in the app menu, so it can be launched with
+a click. Building from source with `make install` installs the binary, the
+desktop entry and the icon, and that is the easy path. The tarball ships the
+same two files next to the binary; install them by hand with:
+
+```sh
+install -Dm755 iago ~/.local/bin/iago
+install -Dm644 com.achetronic.Iago.desktop \
+  ~/.local/share/applications/com.achetronic.Iago.desktop
+install -Dm644 com.achetronic.Iago.svg \
+  ~/.local/share/icons/hicolor/scalable/apps/com.achetronic.Iago.svg
+sed -i "s|^Exec=.*|Exec=$HOME/.local/bin/iago|" \
+  ~/.local/share/applications/com.achetronic.Iago.desktop
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
+The entry itself is this:
+
+```desktop
+[Desktop Entry]
+Type=Application
+Name=Iago
+GenericName=Dictation
+Comment=Private, local dictation powered by Parakeet
+Exec=/home/you/.local/bin/iago
+Icon=com.achetronic.Iago
+Terminal=false
+Categories=Utility;
+Keywords=dictation;speech;transcription;
+StartupNotify=true
+```
+
+`Exec` must be the absolute path to the binary. The `GlobalShortcuts` portal
+matches the running process against the installed entries to name the app, so a
+wrong path leaves push-to-talk undelivered.
+
+After that, clicking the icon opens the window and starts the daemon, so the
+shortcut and the paste are ready.
 
 ## Using it
 

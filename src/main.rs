@@ -34,7 +34,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
 
     match cli.command {
         // No subcommand: the window, which is what a person wants.
-        None => open_control_center(),
+        None => open_control_center(&paths),
         Some(Command::Ui) => run_window(),
         Some(Command::Daemon { action }) => match action {
             DaemonAction::Run => run_daemon(paths, settings),
@@ -48,7 +48,9 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
 ///
 /// Same binary, separate process: the window is a client of the daemon and a
 /// crash in it must not take the daemon down.
-fn open_control_center() -> anyhow::Result<ExitCode> {
+fn open_control_center(paths: &Paths) -> anyhow::Result<ExitCode> {
+    ensure_daemon(paths);
+
     let executable = std::env::current_exe().context("cannot find my own binary")?;
     let mut child = std::process::Command::new(&executable)
         .arg("ui")
@@ -57,6 +59,48 @@ fn open_control_center() -> anyhow::Result<ExitCode> {
 
     child.wait()?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Makes sure the daemon is running before the window opens.
+///
+/// The icon runs plain `iago`, which is only the window. The daemon owns the
+/// shortcut and the delivery, so without it dictation does nothing. When it is
+/// not answering, start it here: one click, everything works.
+fn ensure_daemon(paths: &Paths) {
+    if daemon_alive(paths) {
+        return;
+    }
+
+    let Ok(executable) = std::env::current_exe() else {
+        tracing::warn!("cannot find my own binary, the daemon stays stopped");
+        return;
+    };
+
+    match std::process::Command::new(&executable)
+        .arg("daemon")
+        .arg("run")
+        .spawn()
+    {
+        Ok(_) => tracing::info!("daemon started on demand"),
+        Err(err) => tracing::warn!(error = %err, "cannot start the daemon on demand"),
+    }
+}
+
+/// `true` when the daemon answers on the control socket.
+fn daemon_alive(paths: &Paths) -> bool {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return false;
+    };
+
+    runtime
+        .block_on(ipc::call(
+            &paths.socket(),
+            &Request::new(Action::DaemonAlive),
+        ))
+        .is_ok()
 }
 
 /// Runs the window in this process.
