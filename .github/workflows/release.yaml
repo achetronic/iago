@@ -102,13 +102,27 @@ jobs:
           sha256sum *.tar.gz > checksums.txt
           cat checksums.txt
 
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.ref || github.ref_name }}"
+          version="${tag#v}"
+          notes="docs/release-notes/${version}.md"
+          if [ ! -f "$notes" ]; then
+            notes=".github/release-notes/fallback.md"
+            mkdir -p "$(dirname "$notes")"
+            printf '**Full Changelog**: https://github.com/%s/commits/%s\n' "$GITHUB_REPOSITORY" "$tag" > "$notes"
+          fi
+          echo "path=$notes" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/*.tar.gz
             artifacts/checksums.txt
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
           draft: false
           tag_name: ${{ github.event.inputs.ref || github.ref_name }}
           prerelease: ${{ contains(github.event.inputs.ref || github.ref, '-rc') || contains(github.event.inputs.ref || github.ref, '-beta') || contains(github.event.inputs.ref || github.ref, '-alpha') }}
