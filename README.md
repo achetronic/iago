@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/img/header.png" width="880" alt="Iago, transcription made easy">
+  <img src="docs/img/header.png" width="880" alt="Iago, local AI transcription for everyone">
 </div>
 
 <br>
